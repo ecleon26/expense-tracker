@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE_BYTES } from '../lib/config'
+import { localTodayYmd } from './formatDateTime'
 
 /** Amount: positive number, max 2 decimal places */
 export const amountSchema = z
@@ -14,10 +15,8 @@ export const amountSchema = z
 export const expenseDateSchema = z
   .string()
   .min(1, 'Date is required')
-  .refine((v) => {
-    const d = new Date(v)
-    return !isNaN(d.getTime()) && d <= new Date()
-  }, 'Date cannot be in the future')
+  .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v), 'Enter a valid date')
+  .refine((v) => v <= localTodayYmd(), 'Date cannot be in the future')
 
 /** Image file: correct type, under 5 MB */
 export const imageFileSchema = z
@@ -39,6 +38,7 @@ export const imageFileSchema = z
 
 /** Upload bill form schema */
 export const uploadBillSchema = z.object({
+  club_id: z.string().min(1, 'Please select a club'),
   event_id: z.string().min(1, 'Please select an event'),
   title: z.string().min(1, 'Title is required').max(120, 'Max 120 characters'),
   amount: amountSchema,
@@ -48,3 +48,19 @@ export const uploadBillSchema = z.object({
 })
 
 export type UploadBillFormValues = z.infer<typeof uploadBillSchema>
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+})
+
+export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>
+
+export const resetPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(8, 'Password must be at least 8 characters'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+})
+
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>

@@ -5,21 +5,28 @@ import { queryKeys } from '../lib/queryKeys'
 export interface Event {
   id: string
   name: string
+  club_id: string
   is_active: boolean
 }
 
-export function useActiveEvents() {
+export function useActiveEvents(clubId?: string | null) {
   return useQuery({
-    queryKey: queryKeys.events.active(),
+    queryKey: clubId ? queryKeys.events.byClub(clubId) : queryKeys.events.active(),
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('events')
-        .select('id, name, is_active')
+        .select('id, name, club_id, is_active')
         .eq('is_active', true)
         .order('name')
 
-      if (error) throw new Error(error.message)
+      if (clubId) {
+        query = query.eq('club_id', clubId)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
       return data as Event[]
     },
+    enabled: clubId !== undefined ? Boolean(clubId) : true,
   })
 }

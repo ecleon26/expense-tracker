@@ -37,15 +37,17 @@ Provide `.env.example` with these names and empty values. Never commit `.env`. *
 
 ```
 src/
-  lib/            supabaseClient.ts, config.ts (currency, limits), queryClient.ts
-  auth/           AuthProvider, useAuth, ProtectedRoute, Login, Signup
+  lib/            supabaseClient.ts, config.ts (currency, limits), queryClient.ts, queryKeys.ts
+  auth/           AuthProvider, useAuth, ProtectedRoute, Login, Signup, ForgotPassword, ResetPassword, ChangePasswordModal
   student/        UploadBill, MyExpenses
-  admin/          Dashboard, ReviewQueue, BillDetail, Students, StudentDetail, Events
-  components/     shared UI (Button, Input, Select, Badge, Modal, Spinner, EmptyState, ImageViewer)
-  hooks/          data hooks (useExpenses, useEvents, useSignedUrl, ...)
-  utils/          compressImage.ts, formatCurrency.ts, validators.ts
+  admin/          AdminPages.tsx (Dashboard, ReviewQueue, Students, StudentDetail, Events),
+                  AllBillsPage.tsx, HistoryPage.tsx
+  components/     shared UI (Button, Input, Select, Badge, Modal, Spinner, EmptyState, ImageViewer, QueryState, Toast)
+  hooks/          useExpenses, useEvents, useClubs, useAdminEvents, useAdminAnalytics,
+                  useAdminReview, useAdminBills, useAdminHistory, useSignedUrl
+  utils/          compressImage.ts, formatCurrency.ts, validators.ts, errorMessages.ts
 supabase/
-  migrations/     001_init.sql
+  migrations/     001_init.sql, 002_hardening.sql, 003_v1_clubs_history.sql
 ```
 
 ## Hard rules (security)
@@ -98,7 +100,12 @@ supabase/
 - Small components, one responsibility each. Data fetching in hooks, not inside JSX.
 - Use TanStack Query for all Supabase reads/writes. **Always use `src/lib/queryKeys.ts`** for all query keys and cache invalidations to prevent drift.
 - **Always map errors through `src/utils/errorMessages.ts`** to show friendly user messages; raw details are logged to the console only in development (`import.meta.env.DEV`).
-- Database migrations: `001_init.sql` (baseline schema and policies) and `002_hardening.sql` (trigger guard enhancements, regex bill_path policy, unique index, v_kpis view).
+- **expenses has TWO foreign keys to profiles**: `expenses_user_id_fkey` (student) and `expenses_reviewed_by_fkey` (reviewer). Every PostgREST embed MUST use explicit hints: `student:profiles!expenses_user_id_fkey(...)` and `reviewer:profiles!expenses_reviewed_by_fkey(...)`. Never write a bare `profiles(...)` embed.
+- **In RLS policies on expenses**, the events table also has a `club_id` column — qualify outer references as `public.expenses.club_id` to avoid self-comparison in subqueries.
+- **Never use localStorage** for anything except what Supabase Auth manages itself. Do not remember club selection.
+- Database migrations: `001_init.sql` (baseline), `002_hardening.sql` (trigger guard, regex policy, unique index, v_kpis), `003_v1_clubs_history.sql` (clubs, club_id, undo-review, audit log, SQL aggregate functions).
+- Every data view uses `QueryState` (loading / error with retry / empty / not-found).
+- Aggregate queries call the SQL functions (`kpi_summary`, `spend_by_student`, `spend_by_event`, `spend_by_month`, `spend_by_club`) via `supabase.rpc(...)` — not old views.
 - Run automated security tests with `npm run test:rls`.
 - No unused dependencies. Do not add libraries that are not in the stack without asking.
 - Commit messages: short, imperative (`Add student upload form`).

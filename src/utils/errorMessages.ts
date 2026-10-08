@@ -12,6 +12,9 @@ const FRIENDLY: [RegExp, string][] = [
   // Trigger-raised messages (match before generic Postgres codes)
   [/already been reviewed/i, 'This bill has already been reviewed by someone else.'],
   [/reject reason required/i, 'A rejection reason is required.'],
+  [/revert reason is required/i, 'A reason is required to undo the review.'],
+  [/invalid status change.*undo/i, 'Invalid status change. Undo the review first.'],
+  [/immutable fields/i, 'Cannot modify immutable expense fields.'],
 
   // Postgres constraint errors
   [/42501/, "You don't have permission to do that."],
@@ -23,8 +26,11 @@ const FRIENDLY: [RegExp, string][] = [
   [/invalid login credentials/i, 'Incorrect email or password.'],
   [/user already registered/i, 'An account with this email already exists.'],
   [/email not confirmed/i, 'Please verify your email address before signing in.'],
-  [/rate limit/i, 'Too many attempts. Please wait a moment before trying again.'],
+  [/rate limit|over_email_send_rate_limit/i, 'Too many attempts. Please wait a moment before trying again.'],
   [/email.*already.*use/i, 'An account with this email already exists.'],
+  [/password should be at least/i, 'Password must be at least 8 characters.'],
+  [/same password/i, 'New password must be different from the current password.'],
+  [/token.*expired|invalid.*token|token.*invalid|recovery.*invalid/i, 'The reset link is invalid or has expired. Please request a new one.'],
 
   // Storage errors
   [/object size exceeds/i, 'The file is too large. Maximum size is 5 MB.'],

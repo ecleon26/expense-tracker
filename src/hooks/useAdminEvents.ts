@@ -6,25 +6,33 @@ import { queryKeys } from '../lib/queryKeys'
 export interface AdminEvent {
   id: string
   name: string
+  club_id: string
   event_date: string | null
   is_active: boolean
   created_at: string
+  clubs: { id: string; name: string } | null
   expenses: { count: number }[]
 }
 
-export function useAdminEvents() {
+export function useAdminEvents(clubId?: string | null) {
   return useQuery({
-    queryKey: queryKeys.admin.events(),
+    queryKey: [...queryKeys.admin.events(), clubId ?? 'all'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('events')
         .select(`
-          id, name, event_date, is_active, created_at,
+          id, name, club_id, event_date, is_active, created_at,
+          clubs ( id, name ),
           expenses:expenses(count)
         `)
         .order('created_at', { ascending: false })
 
-      if (error) throw new Error(error.message)
+      if (clubId) {
+        query = query.eq('club_id', clubId)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
       return data as unknown as AdminEvent[]
     },
   })
@@ -32,20 +40,20 @@ export function useAdminEvents() {
 
 export function useCreateEvent() {
   return useMutation({
-    mutationFn: async (event: { name: string; event_date?: string }) => {
+    mutationFn: async (event: { name: string; club_id: string; event_date?: string }) => {
       const { data, error } = await supabase.from('events').insert([
         {
           name: event.name,
+          club_id: event.club_id,
           event_date: event.event_date || null,
         },
       ])
-      if (error) throw new Error(error.message)
+      if (error) throw error
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.events() })
-      // Also invalidate active events for student dropdowns
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.active() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all() })
     },
   })
 }
@@ -57,12 +65,12 @@ export function useToggleEventStatus() {
         .from('events')
         .update({ is_active })
         .eq('id', id)
-      if (error) throw new Error(error.message)
+      if (error) throw error
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.events() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.active() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all() })
     },
   })
 }

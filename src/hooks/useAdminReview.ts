@@ -11,35 +11,44 @@ export interface PendingExpense {
   expense_date: string
   bill_path: string
   created_at: string
-  events: { name: string } | null
-  profiles: { full_name: string; email: string } | null
+  club_id: string
+  clubs: { id: string; name: string } | null
+  events: { id: string; name: string } | null
+  student: { full_name: string; email: string } | null
 }
 
-export function usePendingExpenses() {
+export function usePendingExpenses(clubId?: string | null) {
   return useQuery({
-    queryKey: queryKeys.expenses.pending(),
+    queryKey: [...queryKeys.expenses.pending(), clubId ?? 'all'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('expenses')
         .select(`
-          id, title, description, amount, expense_date, bill_path, created_at,
-          events ( name ),
-          profiles!expenses_user_id_fkey ( full_name, email )
+          id, title, description, amount, expense_date, bill_path, created_at, club_id,
+          clubs ( id, name ),
+          events ( id, name ),
+          student:profiles!expenses_user_id_fkey ( full_name, email )
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: true }) // Oldest first per PRD
 
-      if (error) throw new Error(error.message)
+      if (clubId) {
+        query = query.eq('club_id', clubId)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
       return data as unknown as PendingExpense[]
     },
   })
 }
 
-function invalidateAdminQueries() {
-  queryClient.invalidateQueries({ queryKey: queryKeys.expenses.pending() })
+export function invalidateAllAdminQueries() {
+  queryClient.invalidateQueries({ queryKey: queryKeys.expenses.all() })
   queryClient.invalidateQueries({ queryKey: queryKeys.admin.stats.all() })
   queryClient.invalidateQueries({ queryKey: queryKeys.admin.students.all() })
   queryClient.invalidateQueries({ queryKey: queryKeys.admin.events() })
+  queryClient.invalidateQueries({ queryKey: queryKeys.admin.history() })
 }
 
 export function useApproveExpense() {
@@ -51,11 +60,11 @@ export function useApproveExpense() {
         .eq('id', id)
         .eq('status', 'pending')
         .select()
-      if (error) throw new Error(error.message)
+      if (error) throw error
       return data
     },
     onSuccess: () => {
-      invalidateAdminQueries()
+      invalidateAllAdminQueries()
     },
   })
 }
@@ -69,11 +78,38 @@ export function useRejectExpense() {
         .eq('id', id)
         .eq('status', 'pending')
         .select()
-      if (error) throw new Error(error.message)
+      if (error) throw error
       return data
     },
     onSuccess: () => {
-      invalidateAdminQueries()
+      invalidateAllAdminQueries()
+    },
+  })
+}
+
+export function useUndoReview() {
+  return useMutation({
+    mutationFn: async ({
+      id,
+      currentStatus,
+      reason,
+    }: {
+      id: string
+      currentStatus: 'approved' | 'rejected'
+      reason: string
+    }) => {
+      const { data, error } = await supabase
+        .from('expenses')
+        .update({ status: 'pending', revert_reason: reason })
+        .eq('id', id)
+        .eq('status', currentStatus)
+        .select()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      invalidateAllAdminQueries()
     },
   })
 }

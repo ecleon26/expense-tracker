@@ -7,6 +7,8 @@ interface AuthContextValue {
   session: Session | null
   profile: Profile | null
   loading: boolean
+  profileLoadFailed: boolean
+  retryProfile: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -16,8 +18,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileLoadFailed, setProfileLoadFailed] = useState(false)
 
   const fetchProfile = useCallback(async (userId: string) => {
+    setProfileLoadFailed(false)
     const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, email, role, created_at')
@@ -27,10 +31,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) {
       if (import.meta.env.DEV) console.error('Profile fetch error:', error)
       setProfile(null)
+      setProfileLoadFailed(true)
     } else {
       setProfile(data as Profile)
+      setProfileLoadFailed(false)
     }
   }, [])
+
+  const retryProfile = useCallback(async () => {
+    const userId = session?.user?.id
+    if (!userId) return
+    setLoading(true)
+    await fetchProfile(userId)
+    setLoading(false)
+  }, [session?.user?.id, fetchProfile])
 
   useEffect(() => {
     // Get initial session
@@ -51,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfile(session.user.id)
         } else {
           setProfile(null)
+          setProfileLoadFailed(false)
         }
         setLoading(false)
       }
@@ -64,7 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signOut }}>
+    <AuthContext.Provider
+      value={{ session, profile, loading, profileLoadFailed, retryProfile, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   )

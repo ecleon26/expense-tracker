@@ -1,10 +1,11 @@
 import { AlertCircle, RefreshCw, Inbox, SearchX } from 'lucide-react'
 import { Spinner } from './Spinner'
 import { Button } from './Button'
+import { friendlyError } from '../utils/errorMessages'
 
 interface QueryStateProps {
   loading?: boolean
-  error?: Error | null
+  error?: unknown
   empty?: boolean
   notFound?: boolean
   onRetry?: () => void
@@ -53,7 +54,7 @@ export function QueryState({
         </div>
         <div>
           <p className="font-semibold text-gray-800">{errorTitle}</p>
-          <p className="mt-1 text-sm text-gray-500">{error.message}</p>
+          <p className="mt-1 text-sm text-gray-500">{friendlyError(error)}</p>
         </div>
         {onRetry && (
           <Button variant="secondary" size="sm" onClick={onRetry}>

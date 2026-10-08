@@ -3,6 +3,8 @@
 
 export const CURRENCY = 'INR' as const
 export const LOCALE = 'en-IN' as const
+/** All users see timestamps in this zone (India). */
+export const DISPLAY_TIME_ZONE = 'Asia/Kolkata' as const
 
 // Storage
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB

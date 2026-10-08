@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../auth/AuthProvider'
+import { useClubs } from '../hooks/useClubs'
 import { useActiveEvents } from '../hooks/useEvents'
 import { useMyExpenses } from '../hooks/useExpenses'
 import { uploadBillSchema, type UploadBillFormValues } from '../utils/validators'
@@ -10,6 +11,7 @@ import { compressImage } from '../utils/compressImage'
 import { BILLS_BUCKET } from '../lib/config'
 import { formatCurrency } from '../utils/formatCurrency'
 import { friendlyError } from '../utils/errorMessages'
+import { formatDateOnly, formatDateTime, localTodayYmd } from '../utils/formatDateTime'
 
 import { Input } from '../components/Input'
 import { Select } from '../components/Select'
@@ -27,7 +29,7 @@ import { ImagePlus, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 export function UploadBillPage() {
   const { profile } = useAuth()
-  const { data: events, isLoading: loadingEvents, error: eventsError, refetch: refetchEvents } = useActiveEvents()
+  const { data: clubs, isLoading: loadingClubs, error: clubsError, refetch: refetchClubs } = useClubs()
   const { toast } = useToast()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
@@ -46,17 +48,40 @@ export function UploadBillPage() {
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
     reset,
   } = useForm<UploadBillFormValues>({
     resolver: zodResolver(uploadBillSchema),
     defaultValues: {
+      club_id: '',
+      event_id: '',
       amount: '',
       title: '',
       description: '',
-      expense_date: new Date().toISOString().split('T')[0],
+      expense_date: localTodayYmd(),
     },
   })
+
+  const selectedClubId = watch('club_id')
+
+  // F3: Load active events for selected club only
+  const {
+    data: events,
+    isLoading: loadingEvents,
+    error: eventsError,
+    refetch: refetchEvents,
+  } = useActiveEvents(selectedClubId || null)
+
+  // F3: Changing the club clears the selected event
+  const prevClubRef = useRef(selectedClubId)
+  useEffect(() => {
+    if (prevClubRef.current !== selectedClubId) {
+      setValue('event_id', '')
+      prevClubRef.current = selectedClubId
+    }
+  }, [selectedClubId, setValue])
 
   const onSubmit = async (values: UploadBillFormValues) => {
     if (!profile) return
@@ -80,9 +105,10 @@ export function UploadBillPage() {
 
       if (uploadError) throw uploadError
 
-      // 3. Insert expense record
+      // 3. Insert expense record with club_id
       const { error: insertError } = await supabase.from('expenses').insert({
         user_id: profile.id,
+        club_id: values.club_id,
         event_id: values.event_id,
         title: values.title,
         description: values.description || null,
@@ -104,7 +130,14 @@ export function UploadBillPage() {
         previewUrlRef.current = null
       }
       setSubmitSuccess(true)
-      reset()
+      reset({
+        club_id: '',
+        event_id: '',
+        amount: '',
+        title: '',
+        description: '',
+        expense_date: localTodayYmd(),
+      })
       setImagePreview(null)
       toast('Bill submitted successfully! It is now pending review.', 'success')
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses.myExpenses() })
@@ -139,13 +172,10 @@ export function UploadBillPage() {
       </div>
 
       <QueryState
-        loading={loadingEvents}
-        error={eventsError}
-        onRetry={refetchEvents}
-        errorTitle="Could not load events"
-        empty={!loadingEvents && !eventsError && (!events || events.length === 0)}
-        emptyTitle="No active events"
-        emptyDescription="An administrator must create an active event before you can upload bills. Check back soon!"
+        loading={loadingClubs}
+        error={clubsError}
+        onRetry={refetchClubs}
+        errorTitle="Could not load clubs"
       >
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           {submitSuccess && (
@@ -168,14 +198,53 @@ export function UploadBillPage() {
           )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            {/* F3: Club dropdown (required, above Event) */}
             <Select
-              label="Event"
+              label="Club"
               required
-              placeholder="Select an event..."
-              options={(events ?? []).map((e) => ({ value: e.id, label: e.name }))}
-              error={errors.event_id?.message}
-              {...register('event_id')}
+              placeholder="Select a club..."
+              options={(clubs ?? []).map((c) => ({ value: c.id, label: c.name }))}
+              error={errors.club_id?.message}
+              {...register('club_id')}
             />
+
+            {/* F3: Event dropdown (disabled until club chosen) */}
+            <div>
+              <Select
+                label="Event"
+                required
+                disabled={!selectedClubId || loadingEvents}
+                placeholder={
+                  !selectedClubId
+                    ? 'Select a club first...'
+                    : loadingEvents
+                    ? 'Loading events...'
+                    : (events ?? []).length === 0
+                    ? 'No active events for this club'
+                    : 'Select an event...'
+                }
+                options={(events ?? []).map((e) => ({ value: e.id, label: e.name }))}
+                error={errors.event_id?.message}
+                {...register('event_id')}
+              />
+              {selectedClubId && !loadingEvents && (events ?? []).length === 0 && !eventsError && (
+                <p className="mt-1.5 text-xs text-amber-600">
+                  This club currently has no active events. Please contact the administrator.
+                </p>
+              )}
+              {eventsError && (
+                <div className="mt-1.5 flex items-center gap-2 text-xs text-red-600">
+                  <span>Failed to load events.</span>
+                  <button
+                    type="button"
+                    onClick={() => refetchEvents()}
+                    className="underline hover:text-red-700"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
 
             <Input
               label="Title"
@@ -296,6 +365,7 @@ export function MyExpensesPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Date</th>
+                  <th className="px-6 py-3 text-left font-medium text-gray-500">Club</th>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Event</th>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Title</th>
                   <th className="px-6 py-3 text-right font-medium text-gray-500">Amount</th>
@@ -310,7 +380,10 @@ export function MyExpensesPage() {
                     onClick={() => setViewImage(expense.bill_path)}
                   >
                     <td className="whitespace-nowrap px-6 py-4 text-gray-500">
-                      {new Date(expense.expense_date).toLocaleDateString()}
+                      {formatDateOnly(expense.expense_date)}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 font-medium text-gray-700">
+                      {expense.clubs?.name || '—'}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-gray-900">
                       {expense.events?.name || 'Unknown Event'}

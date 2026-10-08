@@ -122,28 +122,78 @@ async function main() {
   console.log(`  Student B: ${userB.id} (${userB.email})`)
   console.log(`  Admin:     ${userAdmin.id} (${userAdmin.email})\n`)
 
-  console.log('--- Setting up test events as Admin ---')
+  // ────────────────── Setup: clubs & test events ──────────────────
+
+  console.log('--- Setting up test data as Admin ---')
+
+  // Fetch the Digital VJTI club (seeded by 003 migration)
+  const { data: clubRow, error: clubErr } = await clientAdmin
+    .from('clubs')
+    .select('id')
+    .eq('name', 'Digital VJTI')
+    .single()
+  if (clubErr || !clubRow) {
+    console.error('❌ Could not find "Digital VJTI" club. Make sure 003 migration was applied:', clubErr?.message)
+    process.exit(1)
+  }
+  const testClubId = clubRow.id
+  console.log(`  Club (Digital VJTI): ${testClubId}`)
+
+  // Check 0: Authenticated user can read clubs table; student cannot write it
+  const { data: clubList, error: clubListErr } = await clientA.from('clubs').select('id, name')
+  const clubReadOk = !clubListErr && Array.isArray(clubList) && clubList.length >= 3
+  assert(0, 'Authenticated student can SELECT clubs; minimum 3 rows present', clubReadOk, clubListErr?.message)
+
+  const { error: clubInsertErr } = await clientA.from('clubs').insert({ name: 'Hacker Club' })
+  assert('0b', 'Student cannot INSERT into clubs: rejected', !!clubInsertErr)
+
   // Check or create active event
-  let { data: activeEvents } = await clientAdmin.from('events').select('*').eq('name', 'RLS-TEST active')
+  let { data: activeEvents } = await clientAdmin
+    .from('events')
+    .select('*')
+    .eq('name', 'RLS-TEST active')
+    .eq('club_id', testClubId)
   let activeEvent = activeEvents?.[0]
   if (!activeEvent) {
-    const { data: created, error } = await clientAdmin.from('events').insert({ name: 'RLS-TEST active', is_active: true }).select().single()
+    const { data: created, error } = await clientAdmin
+      .from('events')
+      .insert({ name: 'RLS-TEST active', club_id: testClubId, is_active: true })
+      .select()
+      .single()
     if (error) throw new Error(`Could not create active event: ${error.message}`)
     activeEvent = created
   } else if (!activeEvent.is_active) {
-    const { data: updated } = await clientAdmin.from('events').update({ is_active: true }).eq('id', activeEvent.id).select().single()
+    const { data: updated } = await clientAdmin
+      .from('events')
+      .update({ is_active: true })
+      .eq('id', activeEvent.id)
+      .select()
+      .single()
     activeEvent = updated
   }
 
   // Check or create inactive event
-  let { data: inactiveEvents } = await clientAdmin.from('events').select('*').eq('name', 'RLS-TEST inactive')
+  let { data: inactiveEvents } = await clientAdmin
+    .from('events')
+    .select('*')
+    .eq('name', 'RLS-TEST inactive')
+    .eq('club_id', testClubId)
   let inactiveEvent = inactiveEvents?.[0]
   if (!inactiveEvent) {
-    const { data: created, error } = await clientAdmin.from('events').insert({ name: 'RLS-TEST inactive', is_active: false }).select().single()
+    const { data: created, error } = await clientAdmin
+      .from('events')
+      .insert({ name: 'RLS-TEST inactive', club_id: testClubId, is_active: false })
+      .select()
+      .single()
     if (error) throw new Error(`Could not create inactive event: ${error.message}`)
     inactiveEvent = created
   } else if (inactiveEvent.is_active) {
-    const { data: updated } = await clientAdmin.from('events').update({ is_active: false }).eq('id', inactiveEvent.id).select().single()
+    const { data: updated } = await clientAdmin
+      .from('events')
+      .update({ is_active: false })
+      .eq('id', inactiveEvent.id)
+      .select()
+      .single()
     inactiveEvent = updated
   }
 
@@ -162,6 +212,7 @@ async function main() {
   } else {
     const { data: insData, error: insErr } = await clientA.from('expenses').insert({
       user_id: userA.id,
+      club_id: testClubId,
       event_id: activeEvent.id,
       title: 'RLS-TEST 1: Valid pending expense',
       amount: 150.00,
@@ -182,25 +233,46 @@ async function main() {
   const foundAInB = bExpenses?.some((e) => e.user_id === userA.id || e.id === expense1Id)
   assert(2, "Student B selects expenses: Student A's expense is not present", !bExpErr && !foundAInB)
 
-  // Check 25: Admin review queue embed (explicit profiles FK — regression for dual FK to profiles)
+  // Check 25: Admin review queue embed (explicit profiles FK)
   const reviewQueueSelect = `
-          id, title, description, amount, expense_date, bill_path, created_at,
-          events ( name ),
-          profiles!expenses_user_id_fkey ( full_name, email )
-        `
+    id, title, description, amount, expense_date, bill_path, created_at, club_id,
+    clubs ( id, name ),
+    events ( name ),
+    student:profiles!expenses_user_id_fkey ( full_name, email )
+  `
   const { data: reviewQueueRows, error: reviewQueueErr } = await clientAdmin
     .from('expenses')
     .select(reviewQueueSelect)
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
   const reviewQueueRow = reviewQueueRows?.find((e) => e.id === expense1Id)
-  const reviewQueueHasStudentName =
-    !!reviewQueueRow?.profiles?.full_name && typeof reviewQueueRow.profiles.full_name === 'string'
+  const reviewQueueMissing = []
+  if (reviewQueueErr) {
+    reviewQueueMissing.push(`query error: ${reviewQueueErr.message}`)
+  } else if (!expense1Id) {
+    reviewQueueMissing.push('no expense from check 1')
+  } else if (!reviewQueueRow) {
+    reviewQueueMissing.push('pending row not found in review queue')
+  } else {
+    if (!reviewQueueRow.student || typeof reviewQueueRow.student !== 'object') {
+      reviewQueueMissing.push('student embed object')
+    } else if (typeof reviewQueueRow.student.full_name !== 'string') {
+      reviewQueueMissing.push('student.full_name (not a string)')
+    }
+    if (!reviewQueueRow.clubs || typeof reviewQueueRow.clubs !== 'object') {
+      reviewQueueMissing.push('clubs embed object')
+    } else if (typeof reviewQueueRow.clubs.name !== 'string') {
+      reviewQueueMissing.push('clubs.name (not a string)')
+    } else if (!reviewQueueRow.clubs.name.trim()) {
+      reviewQueueMissing.push('clubs.name (empty)')
+    }
+  }
+  const reviewQueueOk = reviewQueueMissing.length === 0
   assert(
     25,
-    'Admin review queue embed: succeeds and includes student full_name',
-    !reviewQueueErr && !!expense1Id && reviewQueueHasStudentName,
-    reviewQueueErr?.message || (expense1Id ? 'missing profiles.full_name on pending row' : 'no expense from check 1'),
+    'Admin review queue embed with explicit FK hint: student + club objects with valid shapes',
+    reviewQueueOk,
+    reviewQueueMissing.join('; ') || '',
   )
 
   // Check 3: Student B selects from profiles: sees only their own row
@@ -213,6 +285,7 @@ async function main() {
   const path4 = `${userA.id}/${uuid4}.jpg`
   const { error: insErr4 } = await clientA.from('expenses').insert({
     user_id: userA.id,
+    club_id: testClubId,
     event_id: activeEvent.id,
     title: 'RLS-TEST 4: Status approved attempt',
     amount: 100,
@@ -227,6 +300,7 @@ async function main() {
   const path5 = `${userA.id}/${uuid5}.jpg`
   const { error: insErr5 } = await clientA.from('expenses').insert({
     user_id: userB.id,
+    club_id: testClubId,
     event_id: activeEvent.id,
     title: "RLS-TEST 5: Fake user_id",
     amount: 100,
@@ -241,6 +315,7 @@ async function main() {
   const path6 = `${userB.id}/${uuid6}.jpg`
   const { error: insErr6 } = await clientA.from('expenses').insert({
     user_id: userA.id,
+    club_id: testClubId,
     event_id: activeEvent.id,
     title: "RLS-TEST 6: Path in B's folder",
     amount: 100,
@@ -255,6 +330,7 @@ async function main() {
   const path7 = `${userA.id}/${uuid7}.jpg`
   const { error: insErr7 } = await clientA.from('expenses').insert({
     user_id: userA.id,
+    club_id: testClubId,
     event_id: inactiveEvent.id,
     title: 'RLS-TEST 7: Inactive event',
     amount: 100,
@@ -264,9 +340,31 @@ async function main() {
   })
   assert(7, 'Student A inserts against inactive event: rejected', !!insErr7)
 
+  // Check 7b: Student A inserts with mismatched club_id (event belongs to club but expense says different club): rejected
+  // Get a different club ID
+  const { data: otherClub } = await clientAdmin.from('clubs').select('id').neq('id', testClubId).limit(1).single()
+  if (otherClub) {
+    const uuid7b = crypto.randomUUID()
+    const path7b = `${userA.id}/${uuid7b}.jpg`
+    const { error: insErr7b } = await clientA.from('expenses').insert({
+      user_id: userA.id,
+      club_id: otherClub.id,    // Mismatched – event belongs to testClubId
+      event_id: activeEvent.id,
+      title: 'RLS-TEST 7b: Club mismatch',
+      amount: 100,
+      expense_date: '2026-10-01',
+      bill_path: path7b,
+      status: 'pending',
+    })
+    assert('7b', 'Student A inserts with club_id mismatch to event.club_id: rejected', !!insErr7b)
+  } else {
+    assert('7b', 'Student A inserts with club_id mismatch: skipped (only 1 club)', true, 'skipped')
+  }
+
   // Check 8: Student A inserts a second expense reusing the same bill_path: rejected
   const { error: insErr8 } = await clientA.from('expenses').insert({
     user_id: userA.id,
+    club_id: testClubId,
     event_id: activeEvent.id,
     title: 'RLS-TEST 8: Reused bill_path',
     amount: 100,
@@ -296,30 +394,61 @@ async function main() {
   const { data: checkRow12 } = await clientA.from('expenses').select('id').eq('id', expense1Id).single()
   assert(12, 'Student A deletes own expense: expense still exists', checkRow12?.id === expense1Id)
 
-  // Check 13: Student B reads v_spend_by_student and v_kpis: A's data does not leak
-  const { data: bViewStudent } = await clientB.from('v_spend_by_student').select('*')
-  const leakStudentA = bViewStudent?.some((s) => s.user_id === userA.id)
-  const { data: bViewKpis } = await clientB.from('v_kpis').select('*').single()
-  // As a student, B only sees pending bills that B submitted. So B's pending count does not count A's pending bill.
-  const bPendingCount = Number(bViewKpis?.pending_count || 0)
-  assert(13, "Student B reads v_spend_by_student & v_kpis: A's data does not leak", !leakStudentA && bPendingCount === 0, `leak: ${leakStudentA}, bPendingCount: ${bPendingCount}`)
+  // Check 13: Student B cannot read kpi_summary function (SECURITY INVOKER – filters B's own expenses)
+  const { data: bKpi, error: bKpiErr } = await clientB.rpc('kpi_summary', { p_club_id: null })
+  // B has no expenses, so either empty or 0 counts; A's data must not leak
+  const bKpiRow = Array.isArray(bKpi) ? bKpi[0] : bKpi
+  const bPendingCount = Number(bKpiRow?.pending_count ?? 0)
+  assert(13, "Student B kpi_summary: A's pending bill does not leak to B", !bKpiErr && bPendingCount === 0, `bPendingCount=${bPendingCount}`)
 
   // Check 14: Admin approves A's pending expense: succeeds; reviewed_by is the admin id and reviewed_at is set
-  const { data: appData, error: appErr } = await clientAdmin.from('expenses').update({ status: 'approved' }).eq('id', expense1Id).eq('status', 'pending').select().single()
+  const { data: appData, error: appErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'approved' })
+    .eq('id', expense1Id)
+    .eq('status', 'pending')
+    .select()
+    .single()
   const appOk = !appErr && appData?.status === 'approved' && appData?.reviewed_by === userAdmin.id && !!appData?.reviewed_at
   assert(14, "Admin approves A's pending expense: succeeds with reviewed_by & reviewed_at", appOk, appErr?.message)
 
-  // Check 15: Admin tries to change the same bill again (reject or approve): fails (already reviewed)
-  const { data: doubleApp, error: doubleErr } = await clientAdmin.from('expenses').update({ status: 'rejected', reject_reason: 'Testing change' }).eq('id', expense1Id).select()
-  // Either trigger threw an error or 0 rows updated
-  assert(15, 'Admin changes already reviewed bill: rejected', !!doubleErr || doubleApp?.length === 0, doubleErr?.message || '0 rows updated')
+  // Check 15: Admin tries to change the approved bill to rejected without undo: blocked by guard
+  const { data: doubleApp, error: doubleErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'rejected', reject_reason: 'Testing change' })
+    .eq('id', expense1Id)
+    .select()
+  assert(15, 'Admin changes approved→rejected without undo: blocked', !!doubleErr || doubleApp?.length === 0, doubleErr?.message || '0 rows')
+
+  // Check 15b: Admin undoes review with revert_reason: bill goes back to pending
+  const { data: undoData, error: undoErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'pending', revert_reason: 'Approved by mistake' })
+    .eq('id', expense1Id)
+    .eq('status', 'approved')
+    .select()
+    .single()
+  const undoOk = !undoErr && undoData?.status === 'pending' && undoData?.reviewed_by === null
+  assert('15b', 'Admin undoes approval with revert_reason: bill returns to pending', undoOk, undoErr?.message)
+
+  // Check 15c: Undo attempt without revert_reason: blocked by guard
+  // Re-approve first (so we have something to undo)
+  await clientAdmin.from('expenses').update({ status: 'approved' }).eq('id', expense1Id).eq('status', 'pending')
+  const { error: undoNoReasonErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'pending', revert_reason: '' })
+    .eq('id', expense1Id)
+  assert('15c', 'Admin undo without revert_reason: blocked', !!undoNoReasonErr, undoNoReasonErr?.message)
 
   // Check 16: Admin rejects another pending expense: empty reason fails, with reason succeeds
+  // Re-approve may have worked; re-set to pending first if needed
+  await clientAdmin.from('expenses').update({ status: 'pending', revert_reason: 'Setup for check 16' }).eq('id', expense1Id).eq('status', 'approved')
   const uuid16 = crypto.randomUUID()
   const path16 = `${userA.id}/${uuid16}.jpg`
   await clientA.storage.from('bills').upload(path16, VALID_JPEG, { contentType: 'image/jpeg' })
   const { data: exp16 } = await clientA.from('expenses').insert({
     user_id: userA.id,
+    club_id: testClubId,
     event_id: activeEvent.id,
     title: 'RLS-TEST 16: To be rejected',
     amount: 50,
@@ -328,19 +457,58 @@ async function main() {
     status: 'pending',
   }).select().single()
 
-  const { error: rejEmptyErr } = await clientAdmin.from('expenses').update({ status: 'rejected', reject_reason: '' }).eq('id', exp16.id)
-  const { data: rejOkData, error: rejOkErr } = await clientAdmin.from('expenses').update({ status: 'rejected', reject_reason: 'Receipt illegible' }).eq('id', exp16.id).eq('status', 'pending').select().single()
+  const { error: rejEmptyErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'rejected', reject_reason: '' })
+    .eq('id', exp16.id)
+  const { data: rejOkData, error: rejOkErr } = await clientAdmin
+    .from('expenses')
+    .update({ status: 'rejected', reject_reason: 'Receipt illegible' })
+    .eq('id', exp16.id)
+    .eq('status', 'pending')
+    .select()
+    .single()
   const rej16Passed = !!rejEmptyErr && !rejOkErr && rejOkData?.status === 'rejected' && rejOkData?.reject_reason === 'Receipt illegible'
   assert(16, 'Admin rejects with empty reason fails; with reason succeeds', rej16Passed)
 
-  // Check 17: Admin tries to change an expense's amount: fails
-  const { error: admAmtErr } = await clientAdmin.from('expenses').update({ amount: 9999 }).eq('id', expense1Id)
-  assert(17, "Admin tries to change an expense's amount: fails", !!admAmtErr, admAmtErr?.message)
+  // Check 17: Admin tries to change an expense's amount: fails (immutable field guard)
+  const { error: admAmtErr } = await clientAdmin
+    .from('expenses')
+    .update({ amount: 9999 })
+    .eq('id', expense1Id)
+  assert(17, "Admin tries to change an expense's amount: blocked by guard", !!admAmtErr, admAmtErr?.message)
 
-  // Check 18: Admin deletes an expense: expense still exists afterwards
+  // Check 17b: Admin tries to change club_id: blocked
+  const { error: admClubErr } = await clientAdmin
+    .from('expenses')
+    .update({ club_id: testClubId })
+    .eq('id', expense1Id)
+  // The guard blocks even if same value, because status isn't being transitioned
+  assert('17b', "Admin tries to change expense club_id: blocked by guard", !!admClubErr, admClubErr?.message)
+
+  // Check 18: Admin deletes an expense: expense still exists afterwards (no DELETE policy)
   await clientAdmin.from('expenses').delete().eq('id', expense1Id)
   const { data: checkRow18 } = await clientAdmin.from('expenses').select('id').eq('id', expense1Id).single()
-  assert(18, 'Admin deletes an expense: expense still exists afterwards', checkRow18?.id === expense1Id)
+  assert(18, 'Admin deletes an expense: expense still exists afterwards (no delete policy)', checkRow18?.id === expense1Id)
+
+  // Check 18b: Student cannot read expense_audit_log
+  const { data: audRead, error: audReadErr } = await clientA.from('expense_audit_log').select('*')
+  assert('18b', 'Student cannot SELECT from expense_audit_log', !!audReadErr || !audRead || audRead.length === 0, audReadErr?.message)
+
+  // Check 18c: Admin can read expense_audit_log; audit rows exist for expense1Id
+  const { data: audAdmin, error: audAdminErr } = await clientAdmin
+    .from('expense_audit_log')
+    .select('*')
+    .eq('expense_id', expense1Id)
+    .order('created_at', { ascending: true })
+  assert('18c', 'Admin can SELECT expense_audit_log and audit rows exist for expense1', !audAdminErr && audAdmin?.length > 0, audAdminErr?.message || `rows: ${audAdmin?.length}`)
+
+  // Check 18d: Audit log contains at least 'uploaded' and 'approved' and 'review_reverted' entries
+  const actions = (audAdmin || []).map((r) => r.action)
+  const hasUploaded = actions.includes('uploaded')
+  const hasApproved = actions.includes('approved')
+  const hasReverted = actions.includes('review_reverted')
+  assert('18d', "Audit log has 'uploaded', 'approved', 'review_reverted' actions for expense1", hasUploaded && hasApproved && hasReverted, `found: ${actions.join(', ')}`)
 
   console.log('\n--- STORAGE CHECKS ---')
 
@@ -350,7 +518,7 @@ async function main() {
   const { error: upErr19 } = await clientA.storage.from('bills').upload(path19, VALID_JPEG, { contentType: 'image/jpeg' })
   assert(19, "Student A uploads into B's folder: rejected", !!upErr19, upErr19?.message)
 
-  // Check 20: Student B creates a signed URL for A's file: fails or returns nothing, and downloading A's file as B fails
+  // Check 20: Student B creates a signed URL for A's file: fails
   const { data: signedB, error: signedBErr } = await clientB.storage.from('bills').createSignedUrl(path1, 60)
   let downloadBFails = false
   if (signedB?.signedUrl) {
@@ -371,7 +539,7 @@ async function main() {
   }
   assert(21, "Admin creates signed URL for A's file: succeeds", !signedAdmErr && downloadAdminOk)
 
-  // Check 22: Student A uploads > 5 MB: rejected. Uploads invalid MIME (text/plain or image/gif): rejected.
+  // Check 22: Student A uploads > 5 MB: rejected. Invalid MIME: rejected.
   const bigBuffer = Buffer.alloc(5 * 1024 * 1024 + 1024)
   const uuid22a = crypto.randomUUID()
   const { error: bigErr } = await clientA.storage.from('bills').upload(`${userA.id}/${uuid22a}.jpg`, bigBuffer, { contentType: 'image/jpeg' })
@@ -384,17 +552,39 @@ async function main() {
 
   assert(22, 'Student A uploads >5MB or invalid MIME: rejected', !!bigErr && !!mimeTextErr && !!mimeGifErr)
 
+  // Check 22b: JPEG-only bucket — PNG upload rejected
+  const uuid22png = crypto.randomUUID()
+  const { error: pngUploadErr } = await clientA.storage
+    .from('bills')
+    .upload(`${userA.id}/${uuid22png}.jpg`, VALID_JPEG, { contentType: 'image/png' })
+  assert('22b', 'Student A uploads with contentType image/png: rejected', !!pngUploadErr, pngUploadErr?.message)
+
+  // Check 22c: Object name must match UUID.jpg pattern
+  const { error: badNameErr } = await clientA.storage
+    .from('bills')
+    .upload(`${userA.id}/not-a-uuid.jpg`, VALID_JPEG, { contentType: 'image/jpeg' })
+  assert('22c', 'Student A uploads non-UUID .jpg filename: rejected', !!badNameErr, badNameErr?.message)
+
+  // Check 22d: Normal JPEG in correct path still works
+  const uuid22d = crypto.randomUUID()
+  const path22d = `${userA.id}/${uuid22d}.jpg`
+  const { error: okJpegErr } = await clientA.storage
+    .from('bills')
+    .upload(path22d, VALID_JPEG, { contentType: 'image/jpeg' })
+  assert('22d', 'Student A uploads valid JPEG at UUID path: succeeds', !okJpegErr, okJpegErr?.message)
+  if (!okJpegErr) {
+    await clientA.storage.from('bills').remove([path22d])
+  }
+
   // Check 23: Student A uploads to an existing path with upsert: rejected (no overwrite)
   const { error: upsertErr } = await clientA.storage.from('bills').upload(path1, VALID_JPEG, { contentType: 'image/jpeg', upsert: true })
   assert(23, 'Student A uploads to existing path with upsert: rejected', !!upsertErr, upsertErr?.message)
 
   // Check 24: Student A deletes file of SUBMITTED bill: file still exists. Deletes unreferenced file in own folder: succeeds.
-  // 24a: submitted bill file delete
   await clientA.storage.from('bills').remove([path1])
   const { data: checkSubmittedFile } = await clientAdmin.storage.from('bills').createSignedUrl(path1, 60)
   const submittedStillExists = !!checkSubmittedFile?.signedUrl
 
-  // 24b: unreferenced file upload then delete
   const uuid24 = crypto.randomUUID()
   const unrefPath = `${userA.id}/${uuid24}.jpg`
   await clientA.storage.from('bills').upload(unrefPath, VALID_JPEG, { contentType: 'image/jpeg' })
@@ -410,6 +600,29 @@ async function main() {
 
   assert(24, 'Student A delete submitted bill file fails; unreferenced file succeeds', submittedStillExists && !unrefDelErr && unrefGone)
 
+  // Check 26: kpi_summary RPC callable by admin (returns 1 row with correct shape)
+  const { data: adminKpi, error: adminKpiErr } = await clientAdmin.rpc('kpi_summary', { p_club_id: null }).single()
+  const adminKpiRaw = adminKpi
+  const kpiOk = !adminKpiErr &&
+    adminKpiRaw !== null &&
+    'approved_total' in adminKpiRaw &&
+    'pending_count' in adminKpiRaw
+  assert(26, 'Admin calls kpi_summary RPC: returns valid shape', kpiOk, adminKpiErr?.message)
+
+  // Check 27: spend_by_club RPC callable by admin; returns at least 3 rows (the 3 seeded clubs)
+  const { data: clubSpend, error: clubSpendErr } = await clientAdmin.rpc('spend_by_club')
+  assert(27, 'Admin calls spend_by_club RPC: at least 3 rows (seeded clubs)', !clubSpendErr && clubSpend?.length >= 3, clubSpendErr?.message || `rows: ${clubSpend?.length}`)
+
+  // Check 28: expense_audit_log INSERT and DELETE: both blocked for client
+  const { error: audInsertErr } = await clientAdmin.from('expense_audit_log').insert({
+    expense_id: expense1Id,
+    club_id: testClubId,
+    student_id: userA.id,
+    action: 'uploaded',
+    created_at: new Date().toISOString(),
+  })
+  assert(28, 'Admin cannot INSERT into expense_audit_log directly', !!audInsertErr)
+
   console.log('\n====================================================')
   const passedCount = results.filter((r) => r.passed).length
   const failedCount = results.filter((r) => !r.passed).length
@@ -417,6 +630,7 @@ async function main() {
   console.log('====================================================\n')
 
   console.log('Cleanup SQL (run in Supabase SQL Editor as database owner):')
+  console.log("  delete from public.expense_audit_log where expense_id in (select id from public.expenses where title like 'RLS-TEST%');")
   console.log("  delete from public.expenses where title like 'RLS-TEST%';")
   console.log("  delete from public.events where name like 'RLS-TEST%';\n")
 

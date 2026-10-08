@@ -12,7 +12,7 @@ export function useSignedUrl(path: string | null | undefined) {
         .from(BILLS_BUCKET)
         .createSignedUrl(path, SIGNED_URL_EXPIRY)
 
-      if (error) throw new Error(error.message)
+      if (error) throw error
       return data.signedUrl
     },
     enabled: !!path,

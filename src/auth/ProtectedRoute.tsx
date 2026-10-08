@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthProvider'
 import { Spinner } from '../components/Spinner'
+import { ProfileLoadErrorScreen } from './ProfileLoadErrorScreen'
 import type { UserRole } from './types'
 
 interface ProtectedRouteProps {
@@ -14,7 +15,7 @@ const roleHome: Record<UserRole, string> = {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, loading, profileLoadFailed, retryProfile, signOut } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -22,6 +23,19 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" label="Checking session…" />
       </div>
+    )
+  }
+
+  if (session && profileLoadFailed) {
+    return (
+      <ProfileLoadErrorScreen
+        onRetry={() => {
+          void retryProfile()
+        }}
+        onSignOut={() => {
+          void signOut()
+        }}
+      />
     )
   }
 

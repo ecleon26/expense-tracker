@@ -10,6 +10,8 @@ export interface MyExpense {
   status: 'pending' | 'approved' | 'rejected'
   reject_reason: string | null
   bill_path: string
+  club_id: string
+  clubs: { name: string } | null
   events: { name: string } | null
 }
 
@@ -27,12 +29,13 @@ export function useMyExpenses() {
           status,
           reject_reason,
           bill_path,
+          club_id,
+          clubs ( name ),
           events ( name )
         `)
         .order('created_at', { ascending: false })
 
-      if (error) throw new Error(error.message)
-      // Supabase typed the join as an array or object, we know it's an object (many-to-one)
+      if (error) throw error
       return data as unknown as MyExpense[]
     },
   })
