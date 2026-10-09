@@ -103,7 +103,7 @@ supabase/
 - **expenses has TWO foreign keys to profiles**: `expenses_user_id_fkey` (student) and `expenses_reviewed_by_fkey` (reviewer). Every PostgREST embed MUST use explicit hints: `student:profiles!expenses_user_id_fkey(...)` and `reviewer:profiles!expenses_reviewed_by_fkey(...)`. Never write a bare `profiles(...)` embed.
 - **In RLS policies on expenses**, the events table also has a `club_id` column — qualify outer references as `public.expenses.club_id` to avoid self-comparison in subqueries.
 - **Never use localStorage** for anything except what Supabase Auth manages itself. Do not remember club selection.
-- Database migrations: `001_init.sql` (baseline), `002_hardening.sql` (trigger guard, regex policy, unique index, v_kpis), `003_v1_clubs_history.sql` (clubs, club_id, undo-review, audit log, SQL aggregate functions).
+- Database migrations: `001_init.sql` (baseline), `002_hardening.sql` (trigger guard, regex policy, unique index, v_kpis), `003_v1_clubs_history.sql` (clubs, club_id, undo-review, audit log, SQL aggregate functions), `004_prelaunch_fixes.sql`, `005_student_registration_approval.sql`, `006_signup_club.sql` (signup club dropdown + validated `handle_new_user`).
 - Every data view uses `QueryState` (loading / error with retry / empty / not-found).
 - Aggregate queries call the SQL functions (`kpi_summary`, `spend_by_student`, `spend_by_event`, `spend_by_month`, `spend_by_club`) via `supabase.rpc(...)` — not old views.
 - Run automated security tests with `npm run test:rls`.

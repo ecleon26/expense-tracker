@@ -147,6 +147,82 @@ async function main() {
   const { error: clubInsertErr } = await clientA.from('clubs').insert({ name: 'Hacker Club' })
   assert('0b', 'Student cannot INSERT into clubs: rejected', !!clubInsertErr)
 
+  const clientAnon = makeClient()
+  const { data: anonClubs, error: anonClubsErr } = await clientAnon.from('clubs').select('id, name')
+  assert(
+    '0c',
+    'Anonymous user can SELECT clubs for signup dropdown',
+    !anonClubsErr && Array.isArray(anonClubs) && anonClubs.length >= 3,
+    anonClubsErr?.message,
+  )
+
+  const { data: gdgClub } = await clientAdmin.from('clubs').select('id').eq('name', 'GDG').single()
+
+  async function signupProfileCheck(checkNum, description, metadata, expect) {
+    const email = `rls-signup-${crypto.randomUUID()}@rls-test.invalid`
+    const password = 'RlsTestPass123!'
+    const { data: signData, error: signErr } = await clientAnon.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: 'RLS Signup Test',
+          year: '2nd Year (SY)',
+          branch: 'Computer Engineering',
+          roll_number: 'RLS0001',
+          ...metadata,
+        },
+      },
+    })
+    if (signErr || !signData.user?.id) {
+      assert(checkNum, description, false, signErr?.message || 'no user id')
+      return
+    }
+    const { data: prof, error: profErr } = await clientAdmin
+      .from('profiles')
+      .select('club_id, role')
+      .eq('id', signData.user.id)
+      .maybeSingle()
+    const clubOk = expect.club_id === undefined || prof?.club_id === expect.club_id
+    const roleOk = prof?.role === expect.role
+    assert(
+      checkNum,
+      description,
+      !profErr && clubOk && roleOk,
+      profErr?.message || `club_id=${prof?.club_id}, role=${prof?.role}`,
+    )
+  }
+
+  await signupProfileCheck(
+    29,
+    'Signup with valid club_id: profile.club_id matches clubs table',
+    { club_id: testClubId, club_role: 'Tech Core' },
+    { club_id: testClubId, role: 'student' },
+  )
+
+  await signupProfileCheck(
+    30,
+    'Signup with invalid club_id: profile.club_id is null',
+    { club_id: '00000000-0000-0000-0000-000000000000', club_role: 'Tech Core' },
+    { club_id: null, role: 'student' },
+  )
+
+  await signupProfileCheck(
+    31,
+    "Signup with role='admin' in metadata: profile.role remains student",
+    { club_id: testClubId, club_role: 'Tech Core', role: 'admin' },
+    { club_id: testClubId, role: 'student' },
+  )
+
+  if (gdgClub?.id) {
+    await signupProfileCheck(
+      32,
+      'Signup with GDG club_id: profile.club_id saved correctly',
+      { club_id: gdgClub.id, club_role: 'Design' },
+      { club_id: gdgClub.id, role: 'student' },
+    )
+  }
+
   // Check or create active event
   let { data: activeEvents } = await clientAdmin
     .from('events')

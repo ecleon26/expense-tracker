@@ -13,6 +13,7 @@ import { Modal } from '../components/Modal'
 import { useToast } from '../components/Toast'
 import { friendlyError } from '../utils/errorMessages'
 import { useClubs } from '../hooks/useClubs'
+import { QueryState } from '../components/QueryState'
 import { Clock } from 'lucide-react'
 import {
   forgotPasswordSchema,
@@ -175,7 +176,7 @@ const YEAR_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ]
 
-const DIGITAL_VJTI_ROLES = [
+const CLUB_ROLE_OPTIONS = [
   { value: 'Tech Core', label: 'Tech Core' },
   { value: 'Operations & PR', label: 'Operations & PR' },
   { value: 'Design', label: 'Design' },
@@ -185,28 +186,17 @@ const DIGITAL_VJTI_ROLES = [
   { value: 'Treasurer', label: 'Treasurer' },
 ]
 
-const MEMBERSHIP_OPTIONS = [
-  { value: 'yes', label: 'Yes, I am a member' },
-  { value: 'no', label: 'No, I am not a member' },
-]
-
 const signupSchema = z
   .object({
     full_name: z.string().min(2, 'Full name must be at least 2 characters'),
     email: z.string().email('Enter a valid email'),
-    is_member: z.enum(['yes', 'no'], {
-      required_error: 'Please specify if you are a member of Digital VJTI',
-    }),
-    club_role: z.string().min(1, 'Please select your role in Digital VJTI'),
+    club_id: z.string().uuid('Please select which club you are from'),
+    club_role: z.string().min(1, 'Please select your club role'),
     year: z.string().min(1, 'Please select your academic year'),
     branch: z.string().min(2, 'Branch must be at least 2 characters (e.g. Computer Engg)'),
     roll_number: z.string().min(2, 'Roll number / ID is required'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirm_password: z.string(),
-  })
-  .refine((d) => d.is_member === 'yes', {
-    message: 'Only active members of Digital VJTI are eligible to register',
-    path: ['is_member'],
   })
   .refine((d) => d.password === d.confirm_password, {
     message: 'Passwords do not match',
@@ -217,22 +207,27 @@ type SignupFormValues = z.infer<typeof signupSchema>
 export function SignupPage() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const { data: clubs } = useClubs()
+  const { data: clubs, isLoading: clubsLoading, error: clubsError, refetch: refetchClubs } = useClubs()
   const { toast } = useToast()
+
+  const clubOptions =
+    clubs?.map((c) => ({ value: c.id, label: c.name })) ?? []
 
   const {
     register,
     handleSubmit,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<SignupFormValues>({ resolver: zodResolver(signupSchema) })
 
-  const isMember = watch('is_member')
-
   const onSubmit = async (values: SignupFormValues) => {
     setServerError(null)
-    const digitalClub = clubs?.find((c) => c.name.toLowerCase().includes('digital'))
-    const clubId = digitalClub?.id || null
+    const clubExists = clubs?.some((c) => c.id === values.club_id)
+    if (!clubExists) {
+      const msg = 'Selected club is not valid. Please refresh and try again.'
+      setServerError(msg)
+      toast(msg, 'error')
+      return
+    }
 
     const { error } = await supabase.auth.signUp({
       email: values.email,
@@ -240,8 +235,7 @@ export function SignupPage() {
       options: {
         data: {
           full_name: values.full_name,
-          club_id: clubId,
-          club_name: 'Digital VJTI',
+          club_id: values.club_id,
           club_role: values.club_role,
           year: values.year,
           branch: values.branch,
@@ -303,6 +297,15 @@ export function SignupPage() {
             <strong>Member Verification Notice:</strong> Access requires administrator confirmation. Please provide your actual college and club details.
           </div>
 
+          <QueryState
+            loading={clubsLoading}
+            error={clubsError}
+            onRetry={refetchClubs}
+            errorTitle="Could not load clubs"
+            empty={!clubsLoading && !clubsError && clubOptions.length === 0}
+            emptyTitle="No clubs available"
+            emptyDescription="Registration is temporarily unavailable. Please try again later or contact an administrator."
+          >
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
@@ -329,34 +332,27 @@ export function SignupPage() {
                 />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <Select
-                  label="Are you a member of Digital VJTI?"
-                  placeholder="Select Yes or No…"
+                  label="Which club are you from?"
+                  placeholder="Select your club…"
                   required
-                  options={MEMBERSHIP_OPTIONS}
-                  error={errors.is_member?.message}
-                  {...register('is_member')}
+                  options={clubOptions}
+                  error={errors.club_id?.message}
+                  {...register('club_id')}
                 />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <Select
-                  label="Digital VJTI Role"
-                  placeholder={isMember === 'no' ? 'Not eligible' : 'Select your role…'}
+                  label="Club Role"
+                  placeholder="Select your role…"
                   required
-                  disabled={isMember === 'no'}
-                  options={DIGITAL_VJTI_ROLES}
+                  options={CLUB_ROLE_OPTIONS}
                   error={errors.club_role?.message}
                   {...register('club_role')}
                 />
               </div>
-
-              {isMember === 'no' && (
-                <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                  ⚠️ <strong>Access Restricted:</strong> This tracker is exclusively for active members of <strong>Digital VJTI</strong>. Non-members cannot register.
-                </div>
-              )}
 
               <div>
                 <Select
@@ -421,10 +417,11 @@ export function SignupPage() {
               </p>
             )}
 
-            <Button type="submit" loading={isSubmitting} className="mt-2 w-full">
+            <Button type="submit" loading={isSubmitting} className="mt-2 w-full" disabled={clubOptions.length === 0}>
               Submit for Approval
             </Button>
           </form>
+          </QueryState>
         </div>
 
         <p className="mt-4 text-center text-sm text-gray-600">

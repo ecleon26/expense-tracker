@@ -88,7 +88,7 @@ export function MemberApprovalsPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900">Digital VJTI Member Approvals</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Member Approvals</h1>
             {pendingCount > 0 && (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
                 {pendingCount} pending
@@ -96,7 +96,7 @@ export function MemberApprovalsPage() {
             )}
           </div>
           <p className="mt-1 text-sm text-gray-500">
-            Verify Digital VJTI member identity, team role, and branch details before permitting platform access.
+            Verify club member identity, team role, and branch details before permitting platform access.
           </p>
         </div>
 
@@ -180,7 +180,7 @@ export function MemberApprovalsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Student & Email</th>
-                  <th className="px-6 py-3 text-left font-medium text-gray-500">Digital VJTI Role</th>
+                  <th className="px-6 py-3 text-left font-medium text-gray-500">Club & Role</th>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Academic Info</th>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Roll No</th>
                   <th className="px-6 py-3 text-left font-medium text-gray-500">Registered</th>
@@ -204,7 +204,9 @@ export function MemberApprovalsPage() {
                           {item.club_role || 'Tech Core'}
                         </span>
                       </div>
-                      <div className="mt-0.5 text-[11px] text-gray-500 font-medium">Digital VJTI</div>
+                      <div className="mt-0.5 text-[11px] text-gray-500 font-medium">
+                        {item.club_name || 'Club not specified'}
+                      </div>
                     </td>
 
                     {/* Academic Info */}
