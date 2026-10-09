@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { NavLink, Link, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { ChangePasswordModal } from '../auth/AuthPages'
+import { usePendingApprovalsCount } from '../hooks/useAdminApprovals'
 import {
   Upload,
   ListFilter,
   LayoutDashboard,
   ClipboardCheck,
+  UserCheck,
   FileText,
   History,
   Users,
@@ -22,21 +24,12 @@ interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  badge?: number
 }
 
 const studentNav: NavItem[] = [
   { to: '/student/upload', label: 'Upload Bill', icon: <Upload className="h-4 w-4" /> },
   { to: '/student/expenses', label: 'My Expenses', icon: <ListFilter className="h-4 w-4" /> },
-]
-
-// F5: Order: Dashboard, Review Queue, All Bills, History, Students, Events
-const adminNav: NavItem[] = [
-  { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
-  { to: '/admin/review', label: 'Review Queue', icon: <ClipboardCheck className="h-4 w-4" /> },
-  { to: '/admin/bills', label: 'All Bills', icon: <FileText className="h-4 w-4" /> },
-  { to: '/admin/history', label: 'History', icon: <History className="h-4 w-4" /> },
-  { to: '/admin/students', label: 'Students', icon: <Users className="h-4 w-4" /> },
-  { to: '/admin/events', label: 'Events', icon: <Calendar className="h-4 w-4" /> },
 ]
 
 const linkBase =
@@ -58,7 +51,12 @@ function NavLinks({ items, onClick }: { items: NavItem[]; onClick?: () => void }
           onClick={onClick}
         >
           {item.icon}
-          {item.label}
+          <span>{item.label}</span>
+          {Boolean(item.badge && item.badge > 0) && (
+            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              {item.badge}
+            </span>
+          )}
         </NavLink>
       ))}
     </>
@@ -70,6 +68,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const { data: pendingApprovalsCount } = usePendingApprovalsCount()
+
+  const adminNav: NavItem[] = [
+    { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+    { to: '/admin/review', label: 'Review Queue', icon: <ClipboardCheck className="h-4 w-4" /> },
+    {
+      to: '/admin/approvals',
+      label: 'Member Approvals',
+      icon: <UserCheck className="h-4 w-4" />,
+      badge: pendingApprovalsCount || undefined,
+    },
+    { to: '/admin/bills', label: 'All Bills', icon: <FileText className="h-4 w-4" /> },
+    { to: '/admin/history', label: 'History', icon: <History className="h-4 w-4" /> },
+    { to: '/admin/students', label: 'Students', icon: <Users className="h-4 w-4" /> },
+    { to: '/admin/events', label: 'Events', icon: <Calendar className="h-4 w-4" /> },
+  ]
 
   const navItems = profile?.role === 'admin' ? adminNav : studentNav
 
@@ -78,98 +92,133 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     navigate('/login', { replace: true })
   }
 
+  const roleBadge =
+    profile?.role === 'admin' ? (
+      <span className="inline-flex items-center rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-800">
+        Admin
+      </span>
+    ) : (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+        Student
+      </span>
+    )
+
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
-      {/* ── Top bar ── */}
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5">
-          {/* Logo (F2 Branding) */}
-          <Link
-            to={profile?.role === 'admin' ? '/admin' : '/student/upload'}
-            className="flex items-center gap-2.5 text-accent-700 hover:opacity-90"
-          >
-            <Wallet className="h-6 w-6 shrink-0" />
-            <div className="flex flex-col">
-              <span className="text-base font-bold leading-tight">Budget Tracker</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-accent-600 leading-tight">
-                By Digital VJTI
-              </span>
-            </div>
-          </Link>
-
-          {/* Desktop nav (F5 Order) */}
-          <nav className="hidden items-center gap-1 md:flex">
-            <NavLinks items={navItems} />
-          </nav>
-
-          {/* Right: user info + change password + logout */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <span className="hidden text-xs text-gray-500 lg:block">
-              {profile?.full_name}
-              <span className="ml-1 capitalize text-gray-400">({profile?.role})</span>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Desktop Sidebar */}
+      <aside className="hidden w-64 flex-shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+        {/* Brand */}
+        <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
+          <Wallet className="h-6 w-6 text-accent-600" />
+          <div>
+            <span className="text-base font-bold text-gray-900">Budget Tracker</span>
+            <span className="block text-[10px] font-semibold uppercase tracking-wider text-accent-600">
+              By Digital VJTI
             </span>
-
-            {/* F1: Change password */}
-            <button
-              onClick={() => setChangePasswordOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent-500"
-              aria-label="Change password"
-              title="Change password"
-            >
-              <KeyRound className="h-4 w-4" />
-              <span className="hidden lg:inline">Password</span>
-            </button>
-
-            <button
-              onClick={handleSignOut}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent-500"
-              aria-label="Sign out"
-              title="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-
-            {/* Mobile hamburger */}
-            <button
-              onClick={() => setMobileOpen((o) => !o)}
-              className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-accent-500 md:hidden"
-              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={mobileOpen}
-            >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
           </div>
         </div>
 
-        {/* Mobile nav drawer */}
-        {mobileOpen && (
-          <nav className="border-t border-gray-100 bg-white px-4 pb-3 md:hidden">
-            <div className="flex flex-col gap-1 pt-2">
-              <NavLinks items={navItems} onClick={() => setMobileOpen(false)} />
+        {/* Navigation */}
+        <nav className="flex-1 space-y-1 p-4" aria-label="Sidebar">
+          <NavLinks items={navItems} />
+        </nav>
+
+        {/* User Profile Footer */}
+        <div className="border-t border-gray-200 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900">
+                {profile?.full_name || 'Loading…'}
+              </p>
+              <p className="truncate text-xs text-gray-500">{profile?.email}</p>
             </div>
-            <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-xs text-gray-400">
-              <span>
-                {profile?.full_name} · {profile?.role}
+            {roleBadge}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setChangePasswordOpen(true)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              title="Change password"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              Password
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              title="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Mobile Header + Content */}
+      <div className="flex flex-1 flex-col">
+        {/* Mobile Header */}
+        <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-accent-600" />
+            <div>
+              <span className="text-sm font-bold text-gray-900">Budget Tracker</span>
+              <span className="block text-[9px] font-semibold uppercase tracking-wider text-accent-600">
+                Digital VJTI
               </span>
-              <button
-                onClick={() => {
-                  setMobileOpen(false)
-                  setChangePasswordOpen(true)
-                }}
-                className="font-medium text-accent-600 hover:underline"
-              >
-                Change password
-              </button>
             </div>
-          </nav>
+          </div>
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+            aria-label="Toggle navigation menu"
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </header>
+
+        {/* Mobile Dropdown Menu */}
+        {mobileOpen && (
+          <div className="border-b border-gray-200 bg-white p-4 md:hidden">
+            <nav className="space-y-1" aria-label="Mobile navigation">
+              <NavLinks items={navItems} onClick={() => setMobileOpen(false)} />
+            </nav>
+            <div className="mt-4 border-t border-gray-200 pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{profile?.full_name}</p>
+                  <p className="text-xs text-gray-500">{profile?.email}</p>
+                </div>
+                {roleBadge}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setMobileOpen(false)
+                    setChangePasswordOpen(true)
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Password
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
         )}
-      </header>
 
-      {/* ── Page content ── */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
+        {/* Main Content Area */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+      </div>
 
-      {/* Change password modal */}
+      {/* Change Password Modal */}
       <ChangePasswordModal
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}

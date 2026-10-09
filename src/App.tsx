@@ -9,10 +9,15 @@ import {
   ForgotPasswordPage,
   ResetPasswordPage,
 } from './auth/AuthPages'
+import {
+  PendingApprovalPage,
+  RejectedApprovalPage,
+} from './auth/ApprovalStatusPages'
 import { UploadBillPage, MyExpensesPage } from './student/StudentPages'
 import {
   DashboardPage,
   ReviewQueuePage,
+  MemberApprovalsPage,
   AllBillsPage,
   HistoryPage,
   StudentsPage,
@@ -48,6 +53,10 @@ export default function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
 
+            {/* Approval Status */}
+            <Route path="/pending-approval" element={<PendingApprovalPage />} />
+            <Route path="/rejected-approval" element={<RejectedApprovalPage />} />
+
             {/* Student */}
             <Route
               path="/student/upload"
@@ -58,9 +67,10 @@ export default function App() {
               element={<StudentLayout><MyExpensesPage /></StudentLayout>}
             />
 
-            {/* Admin (F5 Order: Dashboard, Review Queue, All Bills, History, Students, Events) */}
+            {/* Admin (Dashboard, Review Queue, Member Approvals, All Bills, History, Students, Events) */}
             <Route path="/admin" element={<AdminLayout><DashboardPage /></AdminLayout>} />
             <Route path="/admin/review" element={<AdminLayout><ReviewQueuePage /></AdminLayout>} />
+            <Route path="/admin/approvals" element={<AdminLayout><MemberApprovalsPage /></AdminLayout>} />
             <Route path="/admin/bills" element={<AdminLayout><AllBillsPage /></AdminLayout>} />
             <Route path="/admin/history" element={<AdminLayout><HistoryPage /></AdminLayout>} />
             <Route path="/admin/students" element={<AdminLayout><StudentsPage /></AdminLayout>} />

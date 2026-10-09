@@ -11,7 +11,7 @@ import { compressImage } from '../utils/compressImage'
 import { BILLS_BUCKET } from '../lib/config'
 import { formatCurrency } from '../utils/formatCurrency'
 import { friendlyError } from '../utils/errorMessages'
-import { formatDateOnly, formatDateTime, localTodayYmd } from '../utils/formatDateTime'
+import { formatDateOnly, localTodayYmd } from '../utils/formatDateTime'
 
 import { Input } from '../components/Input'
 import { Select } from '../components/Select'

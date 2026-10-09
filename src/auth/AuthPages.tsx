@@ -6,11 +6,14 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from './AuthProvider'
 import { Input } from '../components/Input'
+import { Select } from '../components/Select'
 import { Button } from '../components/Button'
 import { Spinner } from '../components/Spinner'
 import { Modal } from '../components/Modal'
 import { useToast } from '../components/Toast'
 import { friendlyError } from '../utils/errorMessages'
+import { useClubs } from '../hooks/useClubs'
+import { Clock } from 'lucide-react'
 import {
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -36,6 +39,13 @@ function safeFrom(from: string | undefined, role: 'student' | 'admin'): string {
   return roleHome[role]
 }
 
+function safeHome(profile: { role: 'student' | 'admin'; approval_status?: string }, from: string | undefined): string {
+  if (profile.role === 'admin') return safeFrom(from, 'admin')
+  if (profile.approval_status === 'pending') return '/pending-approval'
+  if (profile.approval_status === 'rejected') return '/rejected-approval'
+  return safeFrom(from, 'student')
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -46,7 +56,7 @@ export function LoginPage() {
   // Once auth resolves, redirect to the right home (handles post-login redirect too)
   useEffect(() => {
     if (!loading && profile) {
-      navigate(safeFrom(from, profile.role), { replace: true })
+      navigate(safeHome(profile, from), { replace: true })
     }
   }, [loading, profile, navigate, from])
 
@@ -156,12 +166,47 @@ export function LoginPage() {
 
 // ─── Signup ──────────────────────────────────────────────────────────────────
 
+const YEAR_OPTIONS = [
+  { value: '1st Year (FY)', label: '1st Year (FY)' },
+  { value: '2nd Year (SY)', label: '2nd Year (SY)' },
+  { value: '3rd Year (TY)', label: '3rd Year (TY)' },
+  { value: '4th Year (B.Tech)', label: '4th Year (B.Tech)' },
+  { value: 'M.Tech / Postgrad', label: 'M.Tech / Postgrad' },
+  { value: 'Other', label: 'Other' },
+]
+
+const DIGITAL_VJTI_ROLES = [
+  { value: 'Tech Core', label: 'Tech Core' },
+  { value: 'Operations & PR', label: 'Operations & PR' },
+  { value: 'Design', label: 'Design' },
+  { value: 'Social Media', label: 'Social Media' },
+  { value: 'Marketing', label: 'Marketing' },
+  { value: 'Sponsorship', label: 'Sponsorship' },
+  { value: 'Treasurer', label: 'Treasurer' },
+]
+
+const MEMBERSHIP_OPTIONS = [
+  { value: 'yes', label: 'Yes, I am a member' },
+  { value: 'no', label: 'No, I am not a member' },
+]
+
 const signupSchema = z
   .object({
     full_name: z.string().min(2, 'Full name must be at least 2 characters'),
     email: z.string().email('Enter a valid email'),
+    is_member: z.enum(['yes', 'no'], {
+      required_error: 'Please specify if you are a member of Digital VJTI',
+    }),
+    club_role: z.string().min(1, 'Please select your role in Digital VJTI'),
+    year: z.string().min(1, 'Please select your academic year'),
+    branch: z.string().min(2, 'Branch must be at least 2 characters (e.g. Computer Engg)'),
+    roll_number: z.string().min(2, 'Roll number / ID is required'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirm_password: z.string(),
+  })
+  .refine((d) => d.is_member === 'yes', {
+    message: 'Only active members of Digital VJTI are eligible to register',
+    path: ['is_member'],
   })
   .refine((d) => d.password === d.confirm_password, {
     message: 'Passwords do not match',
@@ -172,21 +217,36 @@ type SignupFormValues = z.infer<typeof signupSchema>
 export function SignupPage() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const { data: clubs } = useClubs()
   const { toast } = useToast()
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<SignupFormValues>({ resolver: zodResolver(signupSchema) })
 
+  const isMember = watch('is_member')
+
   const onSubmit = async (values: SignupFormValues) => {
     setServerError(null)
+    const digitalClub = clubs?.find((c) => c.name.toLowerCase().includes('digital'))
+    const clubId = digitalClub?.id || null
+
     const { error } = await supabase.auth.signUp({
       email: values.email,
       password: values.password,
       options: {
-        data: { full_name: values.full_name },
+        data: {
+          full_name: values.full_name,
+          club_id: clubId,
+          club_name: 'Digital VJTI',
+          club_role: values.club_role,
+          year: values.year,
+          branch: values.branch,
+          roll_number: values.roll_number,
+        },
       },
     })
     if (error) {
@@ -196,70 +256,164 @@ export function SignupPage() {
       return
     }
     setSuccess(true)
-    toast('Account created! Please check your email.', 'success')
+    toast('Registration submitted for admin approval!', 'success')
   }
 
   if (success) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-        <div className="w-full max-w-sm rounded-xl border border-green-200 bg-green-50 p-6 text-center shadow-sm">
-          <p className="text-lg font-semibold text-green-800">Check your email ✉️</p>
-          <p className="mt-2 text-sm text-green-700">
-            We sent a confirmation link to your inbox. Click it to activate your account, then{' '}
-            <Link to="/login" className="font-medium underline">
-              sign in
-            </Link>
-            .
+        <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm sm:p-8">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600 mb-4">
+            <Clock className="h-7 w-7" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Registration Submitted!</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Your details (Club, Role, Year, Branch, and Roll Number) have been recorded. To keep our club funds secure, an administrator must confirm your membership before access is granted.
           </p>
+          <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs text-amber-800 text-left space-y-1.5">
+            <p className="font-semibold text-amber-900">What happens next?</p>
+            <p>1. If email confirmation was requested, please verify the link in your inbox.</p>
+            <p>2. A club administrator will review your membership information.</p>
+            <p>3. Once approved, you can sign in to submit bills and track expenses.</p>
+          </div>
+          <div className="mt-6">
+            <Link
+              to="/login"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-accent-700"
+            >
+              Back to Sign In
+            </Link>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4 py-8">
+      <div className="w-full max-w-lg">
+        <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-accent-700">Budget Tracker</h1>
           <p className="text-xs font-semibold uppercase tracking-wider text-accent-600">By Digital VJTI</p>
-          <p className="mt-2 text-sm text-gray-500">Create your account</p>
+          <p className="mt-2 text-sm text-gray-500">Student Account Registration</p>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50/70 p-3 text-xs text-blue-800">
+            <strong>Member Verification Notice:</strong> Access requires administrator confirmation. Please provide your actual college and club details.
+          </div>
+
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
-            <Input
-              label="Full name"
-              type="text"
-              autoComplete="name"
-              required
-              error={errors.full_name?.message}
-              {...register('full_name')}
-            />
-            <Input
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              error={errors.email?.message}
-              {...register('email')}
-            />
-            <Input
-              label="Password"
-              type="password"
-              autoComplete="new-password"
-              required
-              hint="At least 8 characters"
-              error={errors.password?.message}
-              {...register('password')}
-            />
-            <Input
-              label="Confirm password"
-              type="password"
-              autoComplete="new-password"
-              required
-              error={errors.confirm_password?.message}
-              {...register('confirm_password')}
-            />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Input
+                  label="Full name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="e.g. Rahul Sharma"
+                  required
+                  error={errors.full_name?.message}
+                  {...register('full_name')}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <Input
+                  label="College Email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="your.email@example.com"
+                  required
+                  error={errors.email?.message}
+                  {...register('email')}
+                />
+              </div>
+
+              <div>
+                <Select
+                  label="Are you a member of Digital VJTI?"
+                  placeholder="Select Yes or No…"
+                  required
+                  options={MEMBERSHIP_OPTIONS}
+                  error={errors.is_member?.message}
+                  {...register('is_member')}
+                />
+              </div>
+
+              <div>
+                <Select
+                  label="Digital VJTI Role"
+                  placeholder={isMember === 'no' ? 'Not eligible' : 'Select your role…'}
+                  required
+                  disabled={isMember === 'no'}
+                  options={DIGITAL_VJTI_ROLES}
+                  error={errors.club_role?.message}
+                  {...register('club_role')}
+                />
+              </div>
+
+              {isMember === 'no' && (
+                <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                  ⚠️ <strong>Access Restricted:</strong> This tracker is exclusively for active members of <strong>Digital VJTI</strong>. Non-members cannot register.
+                </div>
+              )}
+
+              <div>
+                <Select
+                  label="Academic Year"
+                  placeholder="Select year…"
+                  required
+                  options={YEAR_OPTIONS}
+                  error={errors.year?.message}
+                  {...register('year')}
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Branch / Department"
+                  type="text"
+                  placeholder="e.g. Computer Engineering"
+                  required
+                  error={errors.branch?.message}
+                  {...register('branch')}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <Input
+                  label="Roll Number / Student ID"
+                  type="text"
+                  placeholder="e.g. 211080045"
+                  required
+                  error={errors.roll_number?.message}
+                  {...register('roll_number')}
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  hint="Min. 8 characters"
+                  error={errors.password?.message}
+                  {...register('password')}
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Confirm password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  error={errors.confirm_password?.message}
+                  {...register('confirm_password')}
+                />
+              </div>
+            </div>
 
             {serverError && (
               <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -267,8 +421,8 @@ export function SignupPage() {
               </p>
             )}
 
-            <Button type="submit" loading={isSubmitting} className="mt-1 w-full">
-              Create account
+            <Button type="submit" loading={isSubmitting} className="mt-2 w-full">
+              Submit for Approval
             </Button>
           </form>
         </div>
@@ -283,6 +437,7 @@ export function SignupPage() {
     </div>
   )
 }
+
 
 // ─── Forgot Password ─────────────────────────────────────────────────────────
 

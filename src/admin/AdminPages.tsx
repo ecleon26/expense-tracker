@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   XCircle,
   ChevronLeft,
+  UserCheck,
   Building2,
 } from 'lucide-react'
 import {
@@ -814,21 +815,30 @@ export function StudentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Students</h1>
           <p className="text-sm text-gray-500">All registered students and their approved totals.</p>
         </div>
-        {/* F6 Club filter */}
-        <div className="w-48">
-          <select
-            value={selectedClubId}
-            onChange={(e) => setSelectedClubId(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            aria-label="Filter students by club"
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            to="/admin/approvals"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-xs font-semibold text-accent-700 hover:bg-accent-100 transition-colors shadow-sm"
           >
-            <option value="">All Clubs</option>
-            {(clubs ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            <UserCheck className="h-4 w-4" />
+            Member Approvals
+          </Link>
+          {/* F6 Club filter */}
+          <div className="w-48">
+            <select
+              value={selectedClubId}
+              onChange={(e) => setSelectedClubId(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              aria-label="Filter students by club"
+            >
+              <option value="">All Clubs</option>
+              {(clubs ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -1025,3 +1035,5 @@ export function StudentDetailPage() {
     </div>
   )
 }
+
+export { MemberApprovalsPage } from './MemberApprovalsPage'

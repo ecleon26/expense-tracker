@@ -49,5 +49,15 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     return <Navigate to={roleHome[profile.role]} replace />
   }
 
+  // If student is not yet approved by an admin
+  if (profile.role === 'student') {
+    if (profile.approval_status === 'pending') {
+      return <Navigate to="/pending-approval" replace />
+    }
+    if (profile.approval_status === 'rejected') {
+      return <Navigate to="/rejected-approval" replace />
+    }
+  }
+
   return <>{children}</>
 }

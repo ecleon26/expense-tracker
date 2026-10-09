@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
-import type { Profile } from './types'
+import type { Profile, ApprovalStatus } from './types'
 
 interface AuthContextValue {
   session: Session | null
@@ -9,6 +9,7 @@ interface AuthContextValue {
   loading: boolean
   profileLoadFailed: boolean
   retryProfile: () => Promise<void>
+  refetchProfile: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -22,18 +23,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = useCallback(async (userId: string) => {
     setProfileLoadFailed(false)
-    const { data, error } = await supabase
+    
+    // First try full profile with approval fields
+    const fullQuery = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, approval_status, club_id, club_role, year, branch, roll_number, rejection_reason, created_at')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!fullQuery.error && fullQuery.data) {
+      const data = fullQuery.data as unknown as Profile
+      // Fallback approval_status for admins or unmigrated rows
+      const resolvedStatus: ApprovalStatus = data.approval_status || (data.role === 'admin' ? 'approved' : 'pending')
+      setProfile({
+        ...data,
+        approval_status: resolvedStatus,
+      })
+      setProfileLoadFailed(false)
+      return
+    }
+
+    // Fallback if migration 005 hasn't been executed yet
+    const basicQuery = await supabase
       .from('profiles')
       .select('id, full_name, email, role, created_at')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
 
-    if (error) {
-      if (import.meta.env.DEV) console.error('Profile fetch error:', error)
+    if (basicQuery.error || !basicQuery.data) {
+      if (import.meta.env.DEV) console.error('Profile fetch error:', basicQuery.error || fullQuery.error)
       setProfile(null)
       setProfileLoadFailed(true)
     } else {
-      setProfile(data as Profile)
+      const basicData = basicQuery.data as unknown as Profile
+      setProfile({
+        ...basicData,
+        approval_status: 'approved',
+      })
       setProfileLoadFailed(false)
     }
   }, [])
@@ -44,6 +70,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true)
     await fetchProfile(userId)
     setLoading(false)
+  }, [session?.user?.id, fetchProfile])
+
+  const refetchProfile = useCallback(async () => {
+    const userId = session?.user?.id
+    if (!userId) return
+    await fetchProfile(userId)
   }, [session?.user?.id, fetchProfile])
 
   useEffect(() => {
@@ -76,11 +108,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    setProfile(null)
+    setSession(null)
   }
 
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, profileLoadFailed, retryProfile, signOut }}
+      value={{ session, profile, loading, profileLoadFailed, retryProfile, refetchProfile, signOut }}
     >
       {children}
     </AuthContext.Provider>

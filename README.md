@@ -35,6 +35,8 @@ A simple, role-based web application to track student expenses for club and comm
    - Run `supabase/migrations/001_init.sql` (baseline schema, storage bucket, triggers, RLS policies, aggregate views).
    - Run `supabase/migrations/002_hardening.sql` (hardened insert policies, unique bill_path index, trigger override for DB owner, and `v_kpis` view).
    - Run `supabase/migrations/003_v1_clubs_history.sql` (clubs, event club_id, undo reviews, immutable audit log, and RPC aggregate functions).
+   - Run `supabase/migrations/004_prelaunch_fixes.sql` (strict JPEG-only storage checks and function execute permissions).
+   - Run `supabase/migrations/005_student_registration_approval.sql` (student registration metadata: club, role, year, branch, roll number, and admin approval workflow).
 5. **Start dev server:**
    ```bash
    npm run dev
