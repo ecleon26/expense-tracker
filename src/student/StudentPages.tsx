@@ -23,7 +23,7 @@ import { useToast } from '../components/Toast'
 import { QueryState } from '../components/QueryState'
 import { queryClient } from '../lib/queryClient'
 import { queryKeys } from '../lib/queryKeys'
-import { ImagePlus, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { AlertCircle, Camera, CheckCircle2, Images, X } from 'lucide-react'
 
 // ─── Upload Bill ─────────────────────────────────────────────────────────────
 
@@ -34,7 +34,10 @@ export function UploadBillPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [selectedImageName, setSelectedImageName] = useState<string | null>(null)
   const previewUrlRef = useRef<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
 
   // Revoke object URL on unmount
   useEffect(() => {
@@ -139,6 +142,7 @@ export function UploadBillPage() {
         expense_date: localTodayYmd(),
       })
       setImagePreview(null)
+      setSelectedImageName(null)
       toast('Bill submitted successfully! It is now pending review.', 'success')
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses.myExpenses() })
     } catch (err) {
@@ -149,20 +153,55 @@ export function UploadBillPage() {
   }
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+
     // Revoke the previous preview URL before creating a new one (A5)
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current)
       previewUrlRef.current = null
     }
-    const file = e.target.files?.[0]
+
     if (file) {
       const url = URL.createObjectURL(file)
       previewUrlRef.current = url
       setImagePreview(url)
+      setSelectedImageName(file.name)
+      setValue('image', [file] as unknown as UploadBillFormValues['image'], {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      })
     } else {
       setImagePreview(null)
+      setSelectedImageName(null)
+      setValue('image', [] as unknown as UploadBillFormValues['image'], {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      })
     }
+
+    if (photoInputRef.current) photoInputRef.current.value = ''
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
   }
+
+  const clearSelectedImage = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = null
+    }
+    setImagePreview(null)
+    setSelectedImageName(null)
+    setValue('image', [] as unknown as UploadBillFormValues['image'], {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    })
+    if (photoInputRef.current) photoInputRef.current.value = ''
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
+  }
+
+  const imageInputRegistration = register('image')
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -285,25 +324,60 @@ export function UploadBillPage() {
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 Bill Photo <span className="text-red-500">*</span>
               </label>
-              <div className="mt-1 flex items-center gap-4">
-                <label
-                  className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus-within:ring-2 focus-within:ring-accent-500 focus-within:ring-offset-2"
-                >
-                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
-                  <span>Choose Image</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg, image/png, image/webp"
-                    capture="environment"
-                    className="sr-only"
-                    aria-label="Choose bill photo"
-                    {...register('image')}
-                    onChange={(e) => {
-                      register('image').onChange(e)
-                      handleImageChange(e)
-                    }}
-                  />
-                </label>
+              <div className="mt-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <Camera className="h-4 w-4" aria-hidden="true" />
+                    Take photo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <Images className="h-4 w-4" aria-hidden="true" />
+                    Choose from gallery
+                  </Button>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  aria-label="Take bill photo"
+                  name={imageInputRegistration.name}
+                  onBlur={imageInputRegistration.onBlur}
+                  ref={(element) => {
+                    imageInputRegistration.ref(element)
+                    photoInputRef.current = element
+                  }}
+                  onChange={(e) => {
+                    imageInputRegistration.onChange(e)
+                    handleImageChange(e)
+                  }}
+                />
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  aria-label="Choose bill photo from gallery"
+                  name={imageInputRegistration.name}
+                  onBlur={imageInputRegistration.onBlur}
+                  ref={(element) => {
+                    imageInputRegistration.ref(element)
+                    galleryInputRef.current = element
+                  }}
+                  onChange={(e) => {
+                    imageInputRegistration.onChange(e)
+                    handleImageChange(e)
+                  }}
+                />
                 <span className="text-sm text-gray-500">
                   JPG, PNG, WebP (max 5MB)
                 </span>
@@ -314,6 +388,17 @@ export function UploadBillPage() {
 
               {imagePreview && (
                 <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2">
+                    <span className="truncate text-sm text-gray-700">{selectedImageName}</span>
+                    <button
+                      type="button"
+                      onClick={clearSelectedImage}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-gray-600 hover:bg-white hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                      Remove / change
+                    </button>
+                  </div>
                   <img
                     src={imagePreview}
                     alt="Selected bill preview"
