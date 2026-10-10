@@ -1,3 +1,5 @@
+import type { ClubRole } from '../lib/clubRoleOptions'
+
 export type UserRole = 'student' | 'admin'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
@@ -8,7 +10,7 @@ export interface Profile {
   role: UserRole
   approval_status: ApprovalStatus
   club_id?: string | null
-  club_role?: string | null
+  club_role?: ClubRole | string | null
   year?: string | null
   branch?: string | null
   roll_number?: string | null

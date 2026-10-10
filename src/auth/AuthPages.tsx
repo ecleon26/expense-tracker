@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast'
 import { friendlyError } from '../utils/errorMessages'
 import { useClubs } from '../hooks/useClubs'
 import { QueryState } from '../components/QueryState'
+import { CLUB_ROLE_OPTIONS, clubRoleZodEnum } from '../lib/clubRoleOptions'
 import { Clock } from 'lucide-react'
 import {
   forgotPasswordSchema,
@@ -176,22 +177,12 @@ const YEAR_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ]
 
-const CLUB_ROLE_OPTIONS = [
-  { value: 'Tech Core', label: 'Tech Core' },
-  { value: 'Operations & PR', label: 'Operations & PR' },
-  { value: 'Design', label: 'Design' },
-  { value: 'Social Media', label: 'Social Media' },
-  { value: 'Marketing', label: 'Marketing' },
-  { value: 'Sponsorship', label: 'Sponsorship' },
-  { value: 'Treasurer', label: 'Treasurer' },
-]
-
 const signupSchema = z
   .object({
     full_name: z.string().min(2, 'Full name must be at least 2 characters'),
     email: z.string().email('Enter a valid email'),
     club_id: z.string().uuid('Please select which club you are from'),
-    club_role: z.string().min(1, 'Please select your club role'),
+    club_role: z.enum(clubRoleZodEnum, { required_error: 'Please select your club role' }),
     year: z.string().min(1, 'Please select your academic year'),
     branch: z.string().min(2, 'Branch must be at least 2 characters (e.g. Computer Engg)'),
     roll_number: z.string().min(2, 'Roll number / ID is required'),
